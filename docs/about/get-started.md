@@ -79,10 +79,32 @@ l.select()
 In the output, each box contains the concept name, concept inclusion criteria, and representative example(s).
 ![LLooM select() function output](/media/ui/select_output.png)
 
+#### → Exporting concepts
+If you'd like to export the generated concepts, you can access them directly from the LLooM instance from `l.concepts` and the `to_dict()` helper:
+```py
+concepts = l.concepts
+for concept_id, concept in concepts.items():
+  concept_dict = concept.to_dict()
+  print(concept_dict)  # Sample output: {'id': 'ace2184a-20eb-4cbc-a4a0-5082d7f4532b', 'name': 'Political and Government Accountability', 'prompt': 'Does the text address issues related to holding political figures or government entities accountable?', 'example_ids': ['2476', '1876', '8926', '3076'], 'active': False, 'summary': None, 'seed': None}
+```
+
 ### Score concepts
-Then, apply these concepts to the full dataset with `score()`. This function will score all documents with respect to each concept to indicate the extent to which the document matches the concept inclusion criteria.
+Then, apply these selected concepts to the full dataset with `score()`. This function will score all documents with respect to each concept to indicate the extent to which the document matches the concept inclusion criteria.
 ```py
 score_df = await l.score()
+```
+
+#### → Score additional data
+Now that you induced concepts from the original dataset in your LLooM instance, you can also apply these concepts to score _new_ data by providing a dataframe to the `score()` function. The provided dataframe must contain column names matching the original `df` (i.e., the same `text_col` and `id_col`).
+```py
+df_2 = # Load new dataframe with column names matching df
+score_df_2 = await l.score(df=df_2)
+```
+
+#### → Score all concepts
+If you would like to score _all_ generated concepts rather than selecting concepts from the `l.select()` widget, you can set the `score_all` parameter.
+```py
+score_df = await l.score(score_all=True)
 ```
 
 ## 5: Visualization
@@ -230,11 +252,24 @@ score_df = await l.score(
 )
 ```
 
+## Skipping confirmation input
+To avoid making unintended LLM calls, the workbench functions require user confirmation to proceed with concept generation and scoring (_"Proceed with generation? (y/n)"_ and _"Proceed with scoring? (y/n)"_). However, users can bypass this confirmation message by setting `debug=False`, which will also avoid printing debug information.
+
+```py
+# Sample function calls bypassing confirmation message
+await l.gen(debug=False)
+
+score_df = await l.score(debug=False)
+
+score_df = await l.gen_auto(max_concepts=5, debug=False)
+
+await l.add(name="", prompt="", debug=False)
+```
 
 ## LLooM Operators
 If you'd like to dive deeper and reconfigure the core operators used within LLooM (like the `Distill`, `Cluster`, and `Synthesize` operators), you can access the base functions from the `concept_induction` module:
 
-```
+```py
 import text_lloom.concept_induction as ci
 ```
 
