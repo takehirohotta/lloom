@@ -259,7 +259,7 @@ class lloom:
                     print(f"\t{step_name}: {total_cost:0.4f}")
 
     # Estimate cost of scoring for the given number of concepts
-    def estimate_score_cost(self, n_concepts=None, batch_size=5, get_highlights=True, verbose=False):
+    def estimate_score_cost(self, n_concepts=None, batch_size=5, get_highlights=True, verbose=False, df_to_score=None):
         if n_concepts is None:
             active_concepts = self.__get_active_concepts()
             n_concepts = len(active_concepts)
@@ -275,14 +275,17 @@ class lloom:
         model = self.score_model
         if hasattr(model, "cost"):
             score_prompt_tokens = model.count_tokens_fn(model, score_prompt)
-            n_batches = math.ceil(len(self.in_df) / batch_size)
-            all_doc_tokens = np.sum([model.count_tokens_fn(model, doc) for doc in self.df_to_score[self.doc_col].tolist()])  # Tokens to encode all documents
+            n_batches = math.ceil(len(df_to_score) / batch_size)
+            if df_to_score is None:
+                df_to_score = self.df_to_score
+
+            all_doc_tokens = np.sum([model.count_tokens_fn(model, doc) for doc in df_to_score[self.doc_col].tolist()])  # Tokens to encode all documents
             score_in_tokens = all_doc_tokens + (n_batches * (score_prompt_tokens + est_concept_tokens))
-            score_out_tokens = est_score_json_tokens * n_concepts * len(self.in_df)
+            score_out_tokens = est_score_json_tokens * n_concepts * len(df_to_score)
             est_cost = model.cost_fn(model, (score_in_tokens, score_out_tokens))
 
             total_cost = np.sum(est_cost)
-            print(f"\n\nScoring {n_concepts} concepts for {len(self.in_df)} documents")
+            print(f"\n\nScoring {n_concepts} concepts for {len(df_to_score)} documents")
             print(f"{self.bold_txt('Estimated cost')}: ${np.round(total_cost, 2)}")
             print("**Please note that this is only an approximate cost estimate**")
 
@@ -594,7 +597,7 @@ class lloom:
 
     # Score the specified concepts
     # Only score the concepts that are active
-    async def score(self, c_ids=None, batch_size=1, get_highlights=True, ignore_existing=True):
+    async def score(self, c_ids=None, batch_size=1, get_highlights=True, ignore_existing=True, df=None):
         concepts = {}
         active_concepts = self.__get_active_concepts()
         if c_ids is None:
@@ -607,12 +610,15 @@ class lloom:
                 if c_id in active_concepts:
                     concepts[c_id] = active_concepts[c_id]
         
-        # Ignore concepts that already have existing results
-        if ignore_existing:
+        # Ignore concepts that already have existing results, unless df is provided
+        if ignore_existing and df is None:
             concepts = {c_id: c for c_id, c in concepts.items() if c_id not in self.results}
         
         # Run cost estimation
-        self.estimate_score_cost(n_concepts=len(concepts), batch_size=batch_size, get_highlights=get_highlights)
+        if df is None:
+            df = self.df_to_score
+
+        self.estimate_score_cost(n_concepts=len(concepts), batch_size=batch_size, get_highlights=get_highlights, df_to_score=df)
 
         # Confirm to proceed
         print(f"\n\n{self.bold_highlight_txt('Action required')}")
@@ -623,7 +629,7 @@ class lloom:
 
         # Run usual scoring; results are stored to self.results within the function
         score_df = await score_concepts(
-            text_df=self.df_to_score, 
+            text_df=df, 
             text_col=self.doc_col, 
             doc_id_col=self.doc_id_col,
             concepts=concepts,
