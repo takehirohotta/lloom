@@ -594,12 +594,26 @@ class lloom:
                 widget_active = widget_data[c_id]["active"]
                 c.active = widget_active
         return {c_id: c for c_id, c in self.concepts.items() if c.active}
+    
+    def __set_all_concepts_active(self):
+        for c_id, c in self.concepts.items():
+            c.active = True
+        # Update widget
+        self.select_widget = self.select()
 
     # Score the specified concepts
-    # Only score the concepts that are active
-    async def score(self, c_ids=None, batch_size=1, get_highlights=True, ignore_existing=True, df=None, debug=True):
+    # If c_ids is None, only score the concepts that are active
+    # If score_all is True, set all concepts as active and score all concepts
+    async def score(self, c_ids=None, score_all=False, batch_size=1, get_highlights=True, ignore_existing=True, df=None, debug=True):
         concepts = {}
+        if score_all:
+            self.__set_all_concepts_active()
         active_concepts = self.__get_active_concepts()
+
+        # Show error message if no concepts are active or provided
+        if c_ids is None and len(active_concepts) == 0:
+            raise Exception("No concepts are active. Please run `l.select()` and select at least one concept, or set `score_all=True` in your `l.score()` call to score all generated concepts.")
+        
         if c_ids is None:
             # Score all active concepts
             for c_id, c in active_concepts.items():
