@@ -597,7 +597,7 @@ class lloom:
 
     # Score the specified concepts
     # Only score the concepts that are active
-    async def score(self, c_ids=None, batch_size=1, get_highlights=True, ignore_existing=True, df=None):
+    async def score(self, c_ids=None, batch_size=1, get_highlights=True, ignore_existing=True, df=None, debug=True):
         concepts = {}
         active_concepts = self.__get_active_concepts()
         if c_ids is None:
@@ -621,11 +621,12 @@ class lloom:
         self.estimate_score_cost(n_concepts=len(concepts), batch_size=batch_size, get_highlights=get_highlights, df_to_score=df)
 
         # Confirm to proceed
-        print(f"\n\n{self.bold_highlight_txt('Action required')}")
-        user_input = input("Proceed with scoring? (y/n): ")
-        if user_input.lower() != "y":
-            print("Cancelled scoring")
-            return
+        if debug:
+            print(f"\n\n{self.bold_highlight_txt('Action required')}")
+            user_input = input("Proceed with scoring? (y/n): ")
+            if user_input.lower() != "y":
+                print("Cancelled scoring")
+                return
 
         # Run usual scoring; results are stored to self.results within the function
         score_df = await score_concepts(
@@ -824,10 +825,10 @@ class lloom:
         self.show_selected()
 
         # Run scoring
-        score_df = await self.score()
+        score_df = await self.score(debug=debug)
         return score_df
 
-    async def add(self, name, prompt, ex_ids=[], get_highlights=True):
+    async def add(self, name, prompt, ex_ids=[], get_highlights=True, debug=True):
         # Add concept
         c = Concept(name=name, prompt=prompt, example_ids=ex_ids, active=True)
         self.concepts[c.id] = c
@@ -836,7 +837,7 @@ class lloom:
         self.select_widget = self.select()
 
         # Run scoring
-        cur_score_df = await self.score(c_ids=[c.id], get_highlights=get_highlights)
+        cur_score_df = await self.score(c_ids=[c.id], get_highlights=get_highlights, debug=debug)
         
         # Store results
         self.results[c.id] = cur_score_df
