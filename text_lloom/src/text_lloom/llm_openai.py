@@ -57,7 +57,13 @@ def call_embed_fn(model, texts_arr):
 # TOKEN + COST functions
 def count_tokens_fn(model, text):
     # Fetch the number of tokens used by the provided text
-    encoding = tiktoken.encoding_for_model(model.name)
+    model_name = model.name
+    
+    # Map new GPT-4.1 models to compatible tokenizer
+    if model_name in ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]:
+        model_name = "gpt-4o"  # Use gpt-4o tokenizer for GPT-4.1 models
+    
+    encoding = tiktoken.encoding_for_model(model_name)
     tokens = encoding.encode(text)
     n_tokens = len(tokens)
     return n_tokens
@@ -73,7 +79,13 @@ def cost_fn(model, tokens):
     return in_total, out_total
 
 def truncate_tokens_fn(model, text, out_token_alloc=1500):
-    encoding = tiktoken.encoding_for_model(model.name)
+    model_name = model.name
+    
+    # Map new GPT-4.1 models to compatible tokenizer
+    if model_name in ["gpt-4.1", "gpt-4.1-mini", "gpt-4.1-nano"]:
+        model_name = "gpt-4o"  # Use gpt-4o tokenizer for GPT-4.1 models
+    
+    encoding = tiktoken.encoding_for_model(model_name)
     tokens = encoding.encode(text)
     n_tokens = len(tokens)
 
@@ -151,5 +163,20 @@ MODEL_INFO = {
     },
     "text-embedding-3-large": {
         "cost": (0.13/TOKENS_1M, 0),
+    },
+    "gpt-4.1": {
+        "context_window": 1000000,
+        "cost": (2/TOKENS_1M, 8/TOKENS_1M),
+        "rate_limit": (20, 10)  # = 20*6 = 120 rpm
+    },
+    "gpt-4.1-mini": {
+        "context_window": 1000000,
+        "cost": (0.4/TOKENS_1M, 1.6/TOKENS_1M),
+        "rate_limit": (300, 10)  # = 300*6 = 1800 rpm
+    },
+    "gpt-4.1-nano": {
+        "context_window": 1000000,
+        "cost": (0.1/TOKENS_1M, 0.4/TOKENS_1M),
+        "rate_limit": (300, 10)  # = 300*6 = 1800 rpm
     },
 }
