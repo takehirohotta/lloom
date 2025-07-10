@@ -259,7 +259,7 @@ class lloom:
                     print(f"\t{step_name}: {total_cost:0.4f}")
 
     # Estimate cost of scoring for the given number of concepts
-    def estimate_score_cost(self, n_concepts=None, batch_size=5, get_highlights=True, verbose=False, df_to_score=None):
+    def estimate_score_cost(self, n_concepts=None, batch_size=5, get_highlights=True, verbose=False, df_to_score=None, sequential_processing=False, pivot_output=False):
         if n_concepts is None:
             active_concepts = self.__get_active_concepts()
             n_concepts = len(active_concepts)
@@ -285,8 +285,13 @@ class lloom:
             est_cost = model.cost_fn(model, (score_in_tokens, score_out_tokens))
 
             total_cost = np.sum(est_cost)
-            print(f"\n\nScoring {n_concepts} concepts for {len(df_to_score)} documents")
+            processing_mode = "sequentially (one by one)" if sequential_processing else "in parallel"
+            print(f"\n\nScoring {n_concepts} concepts for {len(df_to_score)} documents ({processing_mode})")
             print(f"{self.bold_txt('Estimated cost')}: ${np.round(total_cost, 2)}")
+            if sequential_processing:
+                print("Note: Sequential processing provides better progress visibility and error handling")
+            if pivot_output:
+                print("Note: Output will be in pivot format (one row per document with all concept scores)")
             print("**Please note that this is only an approximate cost estimate**")
 
             if verbose:
@@ -555,7 +560,8 @@ class lloom:
         # Get examples from example IDs
         for c_id, c in concept_dict.items():
             ex_ids = c["example_ids"]
-            in_df = self.df_filtered.copy()
+            # Use in_df if df_filtered is not set
+            in_df = (self.df_filtered if self.df_filtered is not None else self.in_df).copy()
             in_df[self.doc_id_col] = in_df[self.doc_id_col].astype(str)
             examples = in_df[in_df[self.doc_id_col].isin(ex_ids)][self.doc_col].tolist()
             c["examples"] = examples
@@ -604,7 +610,7 @@ class lloom:
     # Score the specified concepts
     # If c_ids is None, only score the concepts that are active
     # If score_all is True, set all concepts as active and score all concepts
-    async def score(self, c_ids=None, score_all=False, batch_size=1, get_highlights=True, ignore_existing=True, df=None, debug=True):
+    async def score(self, c_ids=None, score_all=False, batch_size=1, get_highlights=True, ignore_existing=True, df=None, debug=True, sequential_processing=False, pivot_output=False):
         concepts = {}
         if score_all:
             self.__set_all_concepts_active()
@@ -632,7 +638,7 @@ class lloom:
         if df is None:
             df = self.df_to_score
 
-        self.estimate_score_cost(n_concepts=len(concepts), batch_size=batch_size, get_highlights=get_highlights, df_to_score=df)
+        self.estimate_score_cost(n_concepts=len(concepts), batch_size=batch_size, get_highlights=get_highlights, df_to_score=df, sequential_processing=sequential_processing, pivot_output=pivot_output)
 
         # Confirm to proceed
         if debug:
@@ -653,8 +659,13 @@ class lloom:
             get_highlights=get_highlights,
             sess=self,
             threshold=1.0,
+            sequential_processing=sequential_processing,
         )
         score_df = self.__escape_unicode(score_df)
+
+        # Convert to pivot format if requested
+        if pivot_output:
+            score_df = self.__convert_to_pivot_format(score_df)
 
         print("✅ Done with concept scoring!")
         return score_df
@@ -682,6 +693,65 @@ class lloom:
             if df[col].dtype == object:
                 df[col] = df[col].apply(lambda x: parse_unicode(x))
         return df
+
+    def __convert_to_pivot_format(self, score_df):
+        """Convert long format score DataFrame to wide/pivot format.
+        
+        Input format (long):
+        doc_id | text | concept_id | concept_name | concept_prompt | score | rationale | highlight | concept_seed
+        
+        Output format (wide):
+        doc_id | text | concept1_id | concept1_name | concept1_prompt | concept1_score | concept1_rationale | concept1_highlight | concept1_seed | concept2_id | ...
+        """
+        if score_df.empty:
+            return score_df
+        
+        # Get base columns (doc_id and text)
+        base_cols = ['doc_id', 'text']
+        base_df = score_df[base_cols].drop_duplicates().reset_index(drop=True)
+        
+        # Get unique concepts in order
+        concepts = score_df[['concept_id', 'concept_name']].drop_duplicates()
+        concept_ids = concepts['concept_id'].tolist()
+        
+        # Create pivot DataFrame
+        pivot_df = base_df.copy()
+        
+        # For each concept, add its columns
+        for i, concept_id in enumerate(concept_ids, 1):
+            concept_data = score_df[score_df['concept_id'] == concept_id]
+            
+            # Merge concept data with base_df
+            concept_cols = {
+                'concept_id': f'concept{i}_id',
+                'concept_name': f'concept{i}_name', 
+                'concept_prompt': f'concept{i}_prompt',
+                'score': f'concept{i}_score',
+                'rationale': f'concept{i}_rationale',
+                'highlight': f'concept{i}_highlight',
+                'concept_seed': f'concept{i}_seed'
+            }
+            
+            # Rename columns for this concept
+            concept_data_renamed = concept_data.copy()
+            for old_col, new_col in concept_cols.items():
+                if old_col in concept_data_renamed.columns:
+                    concept_data_renamed = concept_data_renamed.rename(columns={old_col: new_col})
+            
+            # Select only the new columns (excluding base columns)
+            merge_cols = base_cols + list(concept_cols.values())
+            concept_data_to_merge = concept_data_renamed[
+                [col for col in merge_cols if col in concept_data_renamed.columns]
+            ]
+            
+            # Merge with pivot_df
+            pivot_df = pivot_df.merge(
+                concept_data_to_merge,
+                on=base_cols,
+                how='left'
+            )
+        
+        return pivot_df
     
     def get_score_df(self):
         active_concepts = self.__get_active_concepts()

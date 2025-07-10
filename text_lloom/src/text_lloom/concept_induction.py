@@ -769,7 +769,7 @@ async def score_helper(concept, batch_i, concept_id, df, text_col, doc_id_col, m
 #   --> text could be original, filtered (quotes), and/or summarized (bullets)
 # Parameters: threshold
 # Output: score_df (columns: doc_id, text, concept_id, concept_name, concept_prompt, score, highlight)
-async def score_concepts(text_df, text_col, doc_id_col, concepts, model, batch_size=5, get_highlights=False, sess=None, threshold=1.0):
+async def score_concepts(text_df, text_col, doc_id_col, concepts, model, batch_size=5, get_highlights=False, sess=None, threshold=1.0, sequential_processing=False):
     # Scoring operates on "text" column for each concept
     start = time.time()
 
@@ -778,11 +778,41 @@ async def score_concepts(text_df, text_col, doc_id_col, concepts, model, batch_s
     text_df = filter_empty_rows(text_df, text_col)
 
     text_df[doc_id_col] = text_df[doc_id_col].astype(str)
-    tasks = [score_helper(concept, concept_i, concept_id, text_df, text_col, doc_id_col, model, batch_size, get_highlights, sess=sess, threshold=threshold) for concept_i, (concept_id, concept) in enumerate(concepts.items())]
-    score_dfs = await tqdm_asyncio.gather(*tasks, file=sys.stdout)
+    
+    if sequential_processing:
+        # Process concepts one by one
+        score_dfs = []
+        total_concepts = len(concepts)
+        
+        if sess and sess.debug:
+            print(f"\n{sess.bold_txt('Sequential concept scoring')}: Processing {total_concepts} concepts one by one")
+        
+        for concept_i, (concept_id, concept) in enumerate(concepts.items()):
+            if sess and sess.debug:
+                print(f"\n{sess.bold_txt(f'Processing concept {concept_i + 1}/{total_concepts}')}: {concept.name}")
+            
+            try:
+                score_df = await score_helper(concept, concept_i, concept_id, text_df, text_col, doc_id_col, model, batch_size, get_highlights, sess=sess, threshold=threshold)
+                score_dfs.append(score_df)
+                
+                if sess and sess.debug:
+                    print(f"✓ Completed concept: {concept.name}")
+            except Exception as e:
+                if sess and sess.debug:
+                    print(f"✗ Error processing concept {concept.name}: {str(e)}")
+                # Continue with next concept instead of failing completely
+                continue
+    else:
+        # Original parallel processing
+        tasks = [score_helper(concept, concept_i, concept_id, text_df, text_col, doc_id_col, model, batch_size, get_highlights, sess=sess, threshold=threshold) for concept_i, (concept_id, concept) in enumerate(concepts.items())]
+        score_dfs = await tqdm_asyncio.gather(*tasks, file=sys.stdout)
 
     # Combine score_dfs
-    score_df = pd.concat(score_dfs, ignore_index=True)
+    if score_dfs:
+        score_df = pd.concat(score_dfs, ignore_index=True)
+    else:
+        # Return empty dataframe if no results
+        score_df = pd.DataFrame(columns=SCORE_DF_OUT_COLS)
 
     # Track only the elapsed time here (cost is tracked in the helper function)
     save_progress(sess, score_df, step_name="Score", start=start, tokens=None, model=None)
