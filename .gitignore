@@ -1,0 +1,10 @@
+.ipynb_checkpoints
+node_modules
+text_lloom/src/text_lloom/__pycache__
+text_lloom/src/text_lloom/static
+.env
+__pycache__
+pyproject.toml
+uv.lock
+.python-version
+lloom_backup*

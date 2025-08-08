@@ -784,21 +784,29 @@ async def score_concepts(text_df, text_col, doc_id_col, concepts, model, batch_s
         score_dfs = []
         total_concepts = len(concepts)
         
-        if sess and sess.debug:
+        if sess and hasattr(sess, 'debug') and sess.debug:
             print(f"\n{sess.bold_txt('Sequential concept scoring')}: Processing {total_concepts} concepts one by one")
+        elif sequential_processing:  # 強制的に進捗表示
+            print(f"\nSequential concept scoring: Processing {total_concepts} concepts one by one")
         
         for concept_i, (concept_id, concept) in enumerate(concepts.items()):
-            if sess and sess.debug:
+            if sess and hasattr(sess, 'debug') and sess.debug:
                 print(f"\n{sess.bold_txt(f'Processing concept {concept_i + 1}/{total_concepts}')}: {concept.name}")
+            elif sequential_processing:  # 強制的に進捗表示
+                print(f"\nProcessing concept {concept_i + 1}/{total_concepts}: {concept.name}")
             
             try:
                 score_df = await score_helper(concept, concept_i, concept_id, text_df, text_col, doc_id_col, model, batch_size, get_highlights, sess=sess, threshold=threshold)
                 score_dfs.append(score_df)
                 
-                if sess and sess.debug:
+                if sess and hasattr(sess, 'debug') and sess.debug:
+                    print(f"✓ Completed concept: {concept.name}")
+                elif sequential_processing:  # 強制的に進捗表示
                     print(f"✓ Completed concept: {concept.name}")
             except Exception as e:
-                if sess and sess.debug:
+                if sess and hasattr(sess, 'debug') and sess.debug:
+                    print(f"✗ Error processing concept {concept.name}: {str(e)}")
+                elif sequential_processing:  # 強制的に進捗表示
                     print(f"✗ Error processing concept {concept.name}: {str(e)}")
                 # Continue with next concept instead of failing completely
                 continue
